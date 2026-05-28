@@ -2,8 +2,60 @@ use std::env::var;
 use std::io::Write;
 
 fn main() {
-    use_feature_or_nothing("can_vector"); // https://github.com/rust-lang/rust/issues/69941
-    use_feature_or_nothing("write_all_vectored"); // https://github.com/rust-lang/rust/issues/70436
+    use_cfg_if_compiles(
+        "can_vector",
+        r#"
+            use std::io::{self, Read, Write};
+
+            struct Test;
+
+            impl Read for Test {
+                fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                    Ok(0)
+                }
+
+                fn is_read_vectored(&self) -> bool {
+                    true
+                }
+            }
+
+            impl Write for Test {
+                fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                    Ok(0)
+                }
+
+                fn flush(&mut self) -> io::Result<()> {
+                    Ok(())
+                }
+
+                fn is_write_vectored(&self) -> bool {
+                    true
+                }
+            }
+        "#,
+    ); // https://github.com/rust-lang/rust/issues/69941
+    use_cfg_if_compiles(
+        "write_all_vectored",
+        r#"
+            use std::io::{self, IoSlice, Write};
+
+            struct Test;
+
+            impl Write for Test {
+                fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+                    Ok(0)
+                }
+
+                fn flush(&mut self) -> io::Result<()> {
+                    Ok(())
+                }
+
+                fn write_all_vectored(&mut self, _: &mut [IoSlice<'_>]) -> io::Result<()> {
+                    Ok(())
+                }
+            }
+        "#,
+    ); // https://github.com/rust-lang/rust/issues/70436
 
     use_feature("io_lifetimes_use_std");
 
@@ -12,22 +64,14 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 }
 
-fn use_feature_or_nothing(feature: &str) {
-    if has_feature(feature) {
-        use_feature(feature);
+fn use_cfg_if_compiles(cfg: &str, test: &str) {
+    if can_compile(test) {
+        use_feature(cfg);
     }
 }
 
 fn use_feature(feature: &str) {
     println!("cargo:rustc-cfg={}", feature);
-}
-
-/// Test whether the rustc at `var("RUSTC")` supports the given feature.
-fn has_feature(feature: &str) -> bool {
-    can_compile(format!(
-        "#![allow(stable_features)]\n#![feature({})]",
-        feature
-    ))
 }
 
 /// Test whether the rustc at `var("RUSTC")` can compile the given code.
